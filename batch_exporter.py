@@ -26,40 +26,58 @@ def process_note_batches(target_folder):
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
             
-        # THE FIX: Split ONLY on 4 or more consecutive line breaks.
-        # This bypasses paragraph spacing and only catches the gaps between distinct notes.
+        # Split on 4 or more consecutive line breaks
         notes = re.split(r'\n(?:\s*\n){3,}', content)
         
         saved_count = 0
         for note in notes:
             note = note.strip()
-            # Clean out any artifacts like "" that might have snuck in during the text export
-            note = re.sub(r'^\\s*', '', note).strip()
+            note = re.sub(r'^\s*', '', note).strip()
             
             if not note:
                 continue
                 
             lines = note.split('\n')
             first_line = lines[0].strip()
-            body_text = '\n'.join(lines[1:]).strip()
             
-            # Clean the filename of illegal OS characters
-            safe_title = re.sub(r'[\/\?<>\\:\*\|"]', '', first_line).strip()
+            # --- ULTIMATE SAFEGUARD: Keep the entire raw note as the body ---
+            # This guarantees 100% no data loss.
+            body_text = note
             
-            # Enforce a safe character limit for macOS
-            if len(safe_title) > 200:
-                safe_title = safe_title[:200].strip() + "..."
-                body_text = f"{first_line}\n\n{body_text}".strip()
+            # --- BETTER FILENAMES FOR LINKS ---
+            # Check if the first line contains a URL
+            url_match = re.search(r'https?://(?:www\.)?([^/\s]+)', first_line, re.IGNORECASE)
             
-            if not safe_title:
-                safe_title = f"Untitled_Note_{saved_count + 1}"
+            if url_match:
+                # Extract just the domain (e.g., 'yourstory.com')
+                clean_domain = re.sub(r'[\/\?<>\\:\*\|"]', '', url_match.group(1))
+                safe_title = f"Link - {clean_domain}"
+            else:
+                # Standard OS character cleaning for normal text titles
+                safe_title = re.sub(r'[\/\?<>\\:\*\|"]', '', first_line).strip()
+            
+            # Enforce OS length limit
+            if len(safe_title) > 150:
+                safe_title = safe_title[:150].strip() + "..."
                 
+            if not safe_title:
+                safe_title = f"Untitled_Note"
+                
+            # --- DUPLICATE HANDLING ---
+            # Prevent files with the same name from overwriting each other
+            base_safe_title = safe_title
             out_filepath = os.path.join(output_dir, f"{safe_title}.md")
+            counter = 1
             
+            while os.path.exists(out_filepath):
+                safe_title = f"{base_safe_title} ({counter})"
+                out_filepath = os.path.join(output_dir, f"{safe_title}.md")
+                counter += 1
+                
+            # Write the file
             with open(out_filepath, 'w', encoding='utf-8') as out_f:
-                if body_text:
-                    out_f.write(body_text + '\n')
-                    
+                out_f.write(body_text + '\n')
+                
             saved_count += 1
             
         print(f"✅ Processed '{base_filename}': Saved {saved_count} notes into '/{folder_name}'")
